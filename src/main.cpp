@@ -134,7 +134,9 @@
 #include <stdint.h>
 #ifdef MISTER_HYBRID
 #include "mister_port.h"
+#include "dungeon_data.h"
 extern "C" float mister_turns_passed; // bflib_datetm.cpp
+extern "C" int mister_cheats_pending; // kjm_input.c
 #define MISTER_MAX_TURNS_BEHIND 4
 #endif
 
@@ -3455,6 +3457,27 @@ void gameplay_loop_logic()
     poll_inputs();
     input_eastegg();
     input();
+#ifdef MISTER_HYBRID
+    // The OSD's Cheats page: what the game's own cheat menu does (packets_cheats.c),
+    // in a game of one player
+    if ((mister_cheats_pending != 0) && (game.game_kind == GKind_LocalGame)) {
+        struct PlayerInfo *player = get_my_player();
+        if ((mister_cheats_pending & MISTER_CHEAT_WIN_LEVEL) != 0) {
+            set_player_as_won_level(player);
+        }
+        if ((mister_cheats_pending & MISTER_CHEAT_REVEAL_MAP) != 0) {
+            reveal_whole_map(player);
+        }
+        if ((mister_cheats_pending & MISTER_CHEAT_GOLD) != 0) {
+            player_add_offmap_gold(my_player_number, MISTER_CHEAT_GOLD_AMOUNT);
+        }
+        if ((mister_cheats_pending & MISTER_CHEAT_ROOMS_SPELLS) != 0) {
+            make_available_all_researchable_rooms(my_player_number);
+            make_available_all_researchable_powers(my_player_number);
+        }
+    }
+    mister_cheats_pending = 0;
+#endif
     update();
     frametime_end_measurement(Frametime_Logic);
 
@@ -4547,7 +4570,7 @@ int LbBullfrogMain(unsigned short argc, char *argv[])
 int kfxmain(int argc, char *argv[])
 {
 #ifdef MISTER_HYBRID
-  if (!MiSTer_CheckData()) {
+  if (!MiSTer_StartGame()) {
       return 0;
   }
 #endif
@@ -4567,7 +4590,11 @@ int kfxmain(int argc, char *argv[])
   }
 #endif
 
+#ifdef MISTER_HYBRID
+  return MiSTer_ExitCode();
+#else
   return 0;
+#endif
 }
 
 void update_time(void)

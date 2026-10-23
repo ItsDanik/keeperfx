@@ -59,8 +59,9 @@ TbScreenMode switching_vidmodes[] = {
   Lb_SCREEN_MODE_320_200_8,
 #ifdef MISTER_HYBRID
   // The core shows 320x200: the dungeon is drawn in it, with the game's low
-  // resolution graphics. The menus only exist for 640x480 and are scaled down
-  // (LbScreenSwap). The resolutions of keeperfx.cfg are not used.
+  // resolution graphics, the resolution of its own artwork. The menus only
+  // exist for 640x480 and are shown in it (LbScreenSwap). The resolutions of
+  // keeperfx.cfg are not used.
   Lb_SCREEN_MODE_INVALID,
 #else
   Lb_SCREEN_MODE_640_480_8,

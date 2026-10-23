@@ -404,8 +404,9 @@ int is_game_key_pressed(long key_id, TbBool clear_pressed, TbBool ignore_mods)
  *   B       Right Click   L2           Y       Map           LEFTSTICK
  *   L       Rotate Left   LEFTSHOULDER R       Rotate Right  RIGHTSHOULDER
  *   Select  Space         BACK         Start   Menu          START
- *   Menu OK and Menu Back of the OSD   PADDLE1, PADDLE2 (PADDLE3, PADDLE4:
- *   the core's own two buttons for them)
+ *   Menu OK and Menu Back of the MiSTer menu   PADDLE1, PADDLE2 (PADDLE3,
+ *   PADDLE4: the core's own two buttons for them), which only menus use
+ *   (poll_controller_mouse_clicks(), update_controller_inputs())
  * The bindings are fixed (buttons are remapped in the MiSTer menu) and differ
  * from the game's where a pad may have no sticks: the d-pad and the left
  * stick move the hand and the right stick scrolls the map. In possession it
@@ -427,7 +428,6 @@ static TbControllerButtons mister_controller_buttons(long key_id)
     case Gkey_MoveRight:  return possession ? (CBtn_LS_RIGHT|CBtn_DPAD_RIGHT) : CBtn_RS_RIGHT;
     case Gkey_RotateCW:   return CBtn_LEFTSHOULDER;
     case Gkey_RotateCCW:  return CBtn_RIGHTSHOULDER;
-    case Gkey_LeftClick:  return CBtn_R2|CBtn_PADDLE1|CBtn_PADDLE3;
     case Gkey_ButtonSnapLeft:
     case Gkey_ButtonSnapRight:
     case Gkey_ButtonSnapUp:
@@ -822,7 +822,19 @@ static short get_global_inputs(void)
 
         TbBool toggle_pause = is_game_key_pressed(Gkey_TogglePause, true, false);
         
+#ifdef MISTER_HYBRID
+        // Menu Back (PADDLE2, the core's PADDLE4) closes a window in the
+        // dungeon as Start does, which also ends the pause Start opened it with
+        TbBool pause_menu = is_game_key_pressed(Gkey_PauseMenu, true, false);
+        if (!pause_menu && a_menu_window_is_active() && ((controller_button_state & (CBtn_PADDLE2|CBtn_PADDLE4)) != 0))
+        {
+            controller_button_state &= ~(CBtn_PADDLE2|CBtn_PADDLE4);
+            pause_menu = true;
+        }
+        if (pause_menu)
+#else
         if (is_game_key_pressed(Gkey_PauseMenu, true, false))
+#endif
         {
             TbBool active_menu_closed = false;
             if ( a_menu_window_is_active() )

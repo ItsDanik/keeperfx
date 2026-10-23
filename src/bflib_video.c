@@ -147,7 +147,7 @@ TbResult LbScreenSwap(void)
     TbResult ret = LbMouseOnBeginSwap();
     // Put the data from Draw Surface onto Screen Surface
 #ifdef MISTER_HYBRID
-    // The window is the core's picture, 320x200 or 640x400, whatever the size of the mode
+    // The window is the core's picture, 320x200 or 640x480, whatever the size of the mode
     if (ret == Lb_SUCCESS) {
         lbScreenSurface = SDL_GetWindowSurface(lbWindow);
         if ((lbScreenSurface == NULL) || (lbDrawSurface == NULL)) {
@@ -365,7 +365,7 @@ static TbBool LbHwCheckIsModeAvailable(TbScreenMode mode, unsigned short display
     mdinfo->window_pos_x = SDL_WINDOWPOS_CENTERED_DISPLAY(display);
     mdinfo->window_pos_y = SDL_WINDOWPOS_CENTERED_DISPLAY(display);
 #ifdef MISTER_HYBRID
-    // every 8-bit mode is drawn off screen and scaled to the core's picture
+    // every 8-bit mode is drawn off screen and copied to the core's picture
     mdinfo->Available = (mdinfo->BitsPerPixel == 8) && (mdinfo->Width >= 320) && (mdinfo->Height >= 200);
     return mdinfo->Available;
 #endif
@@ -568,15 +568,14 @@ TbResult LbScreenSetup(TbScreenMode mode, TbScreenCoord width, TbScreenCoord hei
     // The FILL ALL mode is a borderless window
 #ifdef MISTER_HYBRID
     // The size of the window is the video mode of the core: 320x200 for a mode
-    // of that size, 640x400 for the larger ones (the menus), see LbScreenSwap()
+    // of that size, 640x480 for the larger ones (the menus), see LbScreenSwap()
     {
         const TbBool menu_size = (mdinfo->Width >= MISTER_MENU_WIDTH) && (mdinfo->Height >= MISTER_MENU_HEIGHT);
         const int window_w = menu_size ? MISTER_MENU_WIDTH : MISTER_SCREEN_WIDTH;
         const int window_h = menu_size ? MISTER_MENU_HEIGHT : MISTER_SCREEN_HEIGHT;
-        // A mode of the size of the core's goes there as it is, 8 bit, and the
-        // core looks up the colours; scaling mixes colours, so that is RGB565.
+        // Both go there as they are, 8 bit, and the core looks up the colours.
         // The driver reads the hint when it makes the surface of a new size
-        SDL_SetHint("SDL_MISTER_VIDEO_FORMAT", menu_size ? "RGB565" : "INDEX8");
+        SDL_SetHint("SDL_MISTER_VIDEO_FORMAT", "INDEX8");
         if (lbWindow == NULL) {
             lbWindow = SDL_CreateWindow(lbDrawAreaTitle, 0, 0, window_w, window_h, 0);
         } else {

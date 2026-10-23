@@ -230,6 +230,48 @@ static float get_input_delta_time()
 #endif
 }
 
+#ifdef MISTER_HYBRID
+/** In a menu (the frontend, or a window in the dungeon such as the options or
+ *  the question before quitting) Menu OK clicks and Menu Back is Esc. */
+static TbBool mister_in_menu(void)
+{
+    return (game.game_kind == GKind_Unset) || a_menu_window_is_active();
+}
+
+#define MISTER_MENU_OK   (CBtn_PADDLE1|CBtn_PADDLE3)
+#define MISTER_MENU_BACK (CBtn_PADDLE2|CBtn_PADDLE4)
+
+/** The clicks of the gamepad. In a menu, Menu OK clicks too, and a button
+ *  that is Menu OK or Menu Back as well as a click (the MiSTer menu's OK and
+ *  Back are the bottom and the right button of most pads, which are Right and
+ *  Left Click) is only Menu OK or Menu Back, until it is let go. */
+void poll_controller_mouse_clicks()
+{
+    static TbBool left_down = false;
+    static TbBool right_down = false;
+    static TbBool left_held_back = false;
+    static TbBool right_held_back = false;
+    const TbBool menu = mister_in_menu();
+    const TbBool left_button = ((controller_button_state & get_game_key_controller_buttons(Gkey_LeftClick)) != 0);
+    const TbBool right_button = ((controller_button_state & get_game_key_controller_buttons(Gkey_RightClick)) != 0);
+    const TbBool menu_ok = menu && ((controller_button_state & MISTER_MENU_OK) != 0);
+    const TbBool menu_back = menu && ((controller_button_state & MISTER_MENU_BACK) != 0);
+    struct TbPoint delta = {0, 0};
+
+    left_held_back = left_button && (left_held_back || menu_back);
+    right_held_back = right_button && (right_held_back || menu_ok);
+    const TbBool left = (left_button && !left_held_back) || menu_ok;
+    const TbBool right = right_button && !right_held_back;
+    if (left != left_down) {
+        mouseControl(left ? MActn_LBUTTONDOWN : MActn_LBUTTONUP, &delta);
+        left_down = left;
+    }
+    if (right != right_down) {
+        mouseControl(right ? MActn_RBUTTONDOWN : MActn_RBUTTONUP, &delta);
+        right_down = right;
+    }
+}
+#else
 void poll_controller_mouse_clicks()
 {
     static TbControllerButtons previous_controller_button_state;
@@ -254,6 +296,7 @@ void poll_controller_mouse_clicks()
     }
     previous_controller_button_state = controller_button_state;
 }
+#endif
 
 #define SECONDS_TO_CROSS   20.0f
 static void poll_controller_mouse_movement(float nx, float ny)
@@ -318,10 +361,11 @@ void update_controller_inputs()
         mouse_x = 0.0f;
         mouse_y = 0.0f;
     }
-    // Menu Back of the OSD leaves a menu, as Esc does. Not in the dungeon,
-    // where that button may well be the one for the right click.
+    // Menu Back leaves a menu of the frontend, as Esc does. A window in the
+    // dungeon it closes as Start does (mister_controller_buttons()); in the
+    // dungeon itself that button is a click.
     static TbBool last_menu_back_state = false;
-    const TbBool menu_back_pressed = ((controller_button_state & (CBtn_PADDLE2|CBtn_PADDLE4)) != 0);
+    const TbBool menu_back_pressed = ((controller_button_state & MISTER_MENU_BACK) != 0);
     if (menu_back_pressed && !last_menu_back_state && (game.game_kind == GKind_Unset)) {
         lbKeyOn[KC_ESCAPE] = 1;
         lbInkey = KC_ESCAPE;
@@ -341,12 +385,22 @@ void update_controller_inputs()
         
 }
 
+#ifdef MISTER_HYBRID
+/** The OSD's cheats picked (MiSTer_Cheats()), kept until gameplay_loop_logic()
+ *  does them after a turn's input: the game polls between turns as well
+ *  (keeper_wait_for_screen_focus()). Picked outside a game of one player (a
+ *  menu, a movie), they are dropped. */
+int mister_cheats_pending = 0;
+#endif
+
 TbBool poll_inputs(void)
 {
     TbBool user_not_quit = LbPollInputs();
     update_controller_inputs();
 #ifdef MISTER_HYBRID
     MiSTer_UpdateVolume();
+    const int cheats = MiSTer_Cheats();
+    mister_cheats_pending = (game.game_kind == GKind_LocalGame) ? (mister_cheats_pending | cheats) : 0;
 #endif
 
     return user_not_quit;
