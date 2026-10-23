@@ -53,6 +53,17 @@ void pause_music(void);
 void resume_music(void);
 void stop_music(void);
 
+#ifdef MISTER_HYBRID
+// The core plays one stream of audio, which SDL_mixer has: the movies put
+// their sound into it with these instead of opening a device of their own.
+// Begin returns false while SDL_mixer is not running.
+TbBool MiSTer_MovieAudioBegin(int *frequency, int *channels);
+void MiSTer_MovieAudioQueue(const void *samples, int bytes); // signed 16 bit
+void MiSTer_MovieAudioEnd(void);
+// Sound Volume and Music Volume of the OSD, on top of the game's own: call often
+void MiSTer_UpdateVolume(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

@@ -4332,6 +4332,26 @@ TbBool creature_is_hostile_towards(const struct Thing *fightng, const struct Thi
  * @returns 'false' if both creatures are not hostile towards each other, or if either met any of the following conditions:
  * - Either creature is influenced by 'Call to Arms'.
  * - Either creature is member of a group/party. */
+#ifdef MISTER_HYBRID
+// While one creature is compared with all the others (its search for an enemy), what
+// creature_is_hostile_towards() says about the other creature's model is kept. It reads
+// two lists of CREATURE_TYPES_MAX models for every pair, which was a fifth of the time
+// of a busy level on the MiSTer.
+static const struct Thing *hostility_memo_creature;
+static unsigned char hostility_memo[CREATURE_TYPES_MAX]; // by model: 0 not known, 1 not hostile, 2 hostile
+
+void creature_hostility_memo_begin(const struct Thing *fightng)
+{
+    hostility_memo_creature = fightng;
+    memset(hostility_memo, 0, sizeof(hostility_memo));
+}
+
+void creature_hostility_memo_end(void)
+{
+    hostility_memo_creature = NULL;
+}
+#endif
+
 TbBool creature_is_hostile_to_creature(const struct Thing *fightng, const struct Thing *enmtng)
 {
     // Creatures cannot be hostile towards allies if influenced by CTA.
@@ -4344,6 +4364,15 @@ TbBool creature_is_hostile_to_creature(const struct Thing *fightng, const struct
     {
         return false;
     }
+#ifdef MISTER_HYBRID
+    if ((fightng == hostility_memo_creature) && (enmtng->model >= 0) && (enmtng->model < CREATURE_TYPES_MAX))
+    {
+        unsigned char *known = &hostility_memo[enmtng->model];
+        if (*known == 0)
+            *known = (creature_is_hostile_towards(fightng, enmtng) || creature_is_hostile_towards(enmtng, fightng)) ? 2 : 1;
+        return (*known == 2);
+    }
+#endif
     // Lastly, check if neither creature has hostility set towards the other.
     if (!creature_is_hostile_towards(fightng, enmtng) && !creature_is_hostile_towards(enmtng, fightng))
     {

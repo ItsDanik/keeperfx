@@ -37,6 +37,9 @@
 #include "game_legacy.h"
 #include "keeperfx.hpp"
 #include <SDL2/SDL.h>
+#ifdef MISTER_HYBRID
+#include "mister_port.h"
+#endif
 #include "post_inc.h"
 
 using namespace std;
@@ -322,8 +325,14 @@ static void process_event(const SDL_Event *ev)
         static int frac_x = 0, frac_y = 0;
         if (lbMouseGrabbed && lbDisplay.MouseMoveRatio > 0)
         {
+#ifdef MISTER_HYBRID
+            // Mouse Speed of the OSD
+            int dx = ev->motion.xrel * lbDisplay.MouseMoveRatio * MiSTer_MouseSpeed() / 256 + frac_x;
+            int dy = ev->motion.yrel * lbDisplay.MouseMoveRatio * MiSTer_MouseSpeed() / 256 + frac_y;
+#else
             int dx = ev->motion.xrel * lbDisplay.MouseMoveRatio + frac_x;
             int dy = ev->motion.yrel * lbDisplay.MouseMoveRatio + frac_y;
+#endif
 
             mouseDelta.x = (dx + 128) >> 8;
             mouseDelta.y = (dy + 128) >> 8;

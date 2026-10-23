@@ -35,7 +35,9 @@
 
 #include <string.h>
 #include <SDL2/SDL.h>
+#ifndef MISTER_HYBRID
 #include <SDL2/SDL_image.h>
+#endif
 #include <ctype.h>
 #include "post_inc.h"
 /******************************************************************************/
@@ -60,7 +62,11 @@ TbBool take_screenshot(char *fname)
     {
         case 1:
         {
+#ifdef MISTER_HYBRID // no SDL_image: screenshots are BMP files
+            success = (SDL_SaveBMP(lbDrawSurface, fname) == 0);
+#else
             success = (IMG_SavePNG(lbDrawSurface, fname) == 0);
+#endif
             break;
         }
         case 2:

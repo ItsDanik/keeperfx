@@ -10,6 +10,12 @@ project(keeperfx C CXX)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 
+option(MISTER_HYBRID "Build for the MiSTer hybrid core (see mister/)" OFF)
+if(MISTER_HYBRID)
+    include(mister/mister.cmake)
+    return()
+endif()
+
 # Get the abbreviated commit Id of the head.
 find_package(Git REQUIRED)
 execute_process(COMMAND "${GIT_EXECUTABLE}" describe --always OUTPUT_VARIABLE COMMIT_ID OUTPUT_STRIP_TRAILING_WHITESPACE)

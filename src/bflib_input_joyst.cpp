@@ -207,6 +207,23 @@ void init_controller_input()
         return;
     }
     SDL_GameControllerAddMappingsFromFile(prepare_file_path(FGrp_FxData, "gamecontrollerdb.txt"));
+#ifdef MISTER_HYBRID
+    // The joystick of the core: its buttons are the "J1" list of the core in
+    // order, then (28, 29) the buttons the OSD names as Menu OK and Menu Back.
+    // See mister_controller_buttons() for what they do.
+    if (SDL_NumJoysticks() > 0) {
+        char guid[33];
+        char mapping[512];
+        SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(0), guid, sizeof(guid));
+        snprintf(mapping, sizeof(mapping), "%s,%s,righttrigger:b0,lefttrigger:b1,a:b2,leftstick:b3,"
+            "leftshoulder:b4,rightshoulder:b5,back:b6,start:b7,paddle3:b8,paddle4:b9,paddle1:b28,paddle2:b29,"
+            "dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,leftx:a0,lefty:a1,rightx:a2,righty:a3,",
+            guid, SDL_JoystickNameForIndex(0));
+        if (SDL_GameControllerAddMapping(mapping) < 0) {
+            WARNLOG("Could not add the mapping of the MiSTer joystick: %s", SDL_GetError());
+        }
+    }
+#endif
 
     // Initialize controller
     if (SDL_NumJoysticks() > 0) {

@@ -10,6 +10,9 @@
 #include <AL/alext.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_mixer.h>
+#ifdef MISTER_HYBRID
+#include "mister_port.h"
+#endif
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -462,6 +465,51 @@ struct queued_sample {
 	SoundVolume volume;
 };
 
+#ifdef MISTER_HYBRID
+// The core plays one stream of audio and SDL has one device for it, which
+// SDL_mixer opens for the music and the speech. The sound effects are mixed
+// by OpenAL on a loopback device: no output of its own, it renders what
+// mister_post_mix() asks for into SDL_mixer's stream. The movies add their
+// sound the same way (MiSTer_MovieAudioQueue).
+std::atomic<ALCdevice *> g_mister_loopback;
+SDL_AudioStream * g_mister_movie_stream = nullptr;
+std::mutex g_mister_movie_mutex;
+bool g_mister_post_mix = false;
+
+void mister_add(Sint16 * stream, const Sint16 * samples, int count) {
+	for (int i = 0; i < count; ++i) {
+		const int sum = stream[i] + samples[i];
+		stream[i] = (sum > 32767) ? 32767 : ((sum < -32768) ? -32768 : sum);
+	}
+}
+
+void SDLCALL mister_post_mix(void *, Uint8 * stream, int len) {
+	static std::vector<Sint16> buffer;
+	const int count = len / int(sizeof(Sint16));
+	if (int(buffer.size()) < count) {
+		buffer.resize(count);
+	}
+	const auto device = g_mister_loopback.load();
+	if (device) {
+		alcRenderSamplesSOFT(device, buffer.data(), count / 2);
+		const int volume = MiSTer_SoundVolume();
+		if (volume < 256) {
+			for (int i = 0; i < count; ++i) {
+				buffer[i] = Sint16((buffer[i] * volume) >> 8);
+			}
+		}
+		mister_add(reinterpret_cast<Sint16 *>(stream), buffer.data(), count);
+	}
+	std::lock_guard<std::mutex> guard(g_mister_movie_mutex);
+	if (g_mister_movie_stream) {
+		const int got = SDL_AudioStreamGet(g_mister_movie_stream, buffer.data(), count * int(sizeof(Sint16)));
+		if (got > 0) {
+			mister_add(reinterpret_cast<Sint16 *>(stream), buffer.data(), got / int(sizeof(Sint16)));
+		}
+	}
+}
+#endif
+
 void SDLCALL on_music_finished() {
 	// don't grab mutex or we'll deadlock, just free memory
 	Mix_FreeMusic(g_mix_music.exchange(nullptr));
@@ -511,6 +559,11 @@ extern "C" void FreeAudio() {
 		SYNCDBG(7, "SDL_mixer audio device already closed, skipped duplicate shutdown");
 	}
 
+#ifdef MISTER_HYBRID
+	// the audio thread has stopped (or never ran): nothing renders from the device any more
+	g_mister_loopback = nullptr;
+	g_mister_post_mix = false;
+#endif
 	// Clear OpenAL sources and buffers while context is still current
 	g_sources.clear();
 	g_banks[0].clear();
@@ -541,8 +594,33 @@ extern "C" void set_music_volume(SoundVolume value) {
 	g_music_volume = value;
 	SetRedbookVolume(value);
 	// convert 0..256 to 0..128
+#ifdef MISTER_HYBRID
+	Mix_VolumeMusic(LbLerp(0, MIX_MAX_VOLUME, float(value) / FULL_LOUDNESS) * MiSTer_MusicVolume() / 256);
+#else
 	Mix_VolumeMusic(LbLerp(0, MIX_MAX_VOLUME, float(value) / FULL_LOUDNESS));
+#endif
 }
+
+#ifdef MISTER_HYBRID
+extern "C" void MiSTer_UpdateVolume() {
+	static int last_music = -1;
+	static int last_sound = -1;
+	const int music = MiSTer_MusicVolume();
+	const int sound = MiSTer_SoundVolume();
+	if (!g_mister_post_mix) {
+		return;
+	}
+	if (music != last_music) {
+		last_music = music;
+		set_music_volume(g_music_volume);
+	}
+	if (sound != last_sound) {
+		// the speech, which SDL_mixer plays; the effects are scaled in mister_post_mix()
+		last_sound = sound;
+		Mix_Volume(-1, MIX_MAX_VOLUME * sound / 256);
+	}
+}
+#endif
 
 extern "C" TbBool play_music(const char * fname) {
 	std::lock_guard<std::mutex> guard(g_mix_mutex);
@@ -669,11 +747,25 @@ extern "C" TbBool InitAudio(const SoundSettings * settings) {
 			return true;
 		}
 		print_device_info();
+#ifdef MISTER_HYBRID
+		ALCdevice_ptr device(alcLoopbackOpenDeviceSOFT(nullptr));
+		if (!device) {
+			throw openal_error("Cannot open loopback device");
+		}
+		const ALCint attributes[] = {
+			ALC_FORMAT_CHANNELS_SOFT, ALC_STEREO_SOFT,
+			ALC_FORMAT_TYPE_SOFT, ALC_SHORT_SOFT,
+			ALC_FREQUENCY, 44100,
+			0
+		};
+		ALCcontext_ptr context(alcCreateContext(device.get(), attributes));
+#else
 		ALCdevice_ptr device(alcOpenDevice(nullptr));
 		if (!device) {
 			throw openal_error("Cannot open default audio device");
 		}
 		ALCcontext_ptr context(alcCreateContext(device.get(), nullptr));
+#endif
 		if (!context) {
 			throw openal_error("Cannot create context");
 		} else if (!alcMakeContextCurrent(context.get())) {
@@ -686,6 +778,9 @@ extern "C" TbBool InitAudio(const SoundSettings * settings) {
 		load_sound_banks();
 		g_openal_device = std::move(device);
 		g_openal_context = std::move(context);
+#ifdef MISTER_HYBRID
+		g_mister_loopback = g_openal_device.get();
+#endif
 		return true;
 	} catch (const std::exception & e) {
 		ERRORLOG("%s", e.what());
@@ -852,6 +947,18 @@ extern "C" int InitialiseSDLAudio()
 		Mix_Quit();
 		return 0;
 	}
+#ifdef MISTER_HYBRID
+	{
+		int frequency, channels;
+		Uint16 format;
+		if (Mix_QuerySpec(&frequency, &format, &channels) && frequency == 44100 && format == AUDIO_S16SYS && channels == 2) {
+			Mix_SetPostMix(mister_post_mix, nullptr);
+			g_mister_post_mix = true;
+		} else {
+			ERRORLOG("Unexpected audio format, no sound effects");
+		}
+	}
+#endif
 	Mix_ReserveChannels(1); // reserve for external speech samples
 	Mix_HookMusicFinished(on_music_finished); // register callback so we can do things
 	return flags;
@@ -916,6 +1023,42 @@ extern "C" void set_streamed_sample_volume(SoundVolume volume) {
 	// SoundVolume ranges 0..255 but MIX_MAX_VOLUME ranges 0..128
 	Mix_VolumeChunk(g_streamed_sample, volume / 2);
 }
+
+#ifdef MISTER_HYBRID
+extern "C" TbBool MiSTer_MovieAudioBegin(int * frequency, int * channels) {
+	if (!g_mister_post_mix) {
+		return false;
+	}
+	// what the movie delivers is what the core plays: the stream only buffers
+	const auto stream = SDL_NewAudioStream(AUDIO_S16SYS, 2, 44100, AUDIO_S16SYS, 2, 44100);
+	if (!stream) {
+		return false;
+	}
+	*frequency = 44100;
+	*channels = 2;
+	std::lock_guard<std::mutex> guard(g_mister_movie_mutex);
+	if (g_mister_movie_stream) {
+		SDL_FreeAudioStream(g_mister_movie_stream);
+	}
+	g_mister_movie_stream = stream;
+	return true;
+}
+
+extern "C" void MiSTer_MovieAudioQueue(const void * samples, int bytes) {
+	std::lock_guard<std::mutex> guard(g_mister_movie_mutex);
+	if (g_mister_movie_stream) {
+		SDL_AudioStreamPut(g_mister_movie_stream, samples, bytes);
+	}
+}
+
+extern "C" void MiSTer_MovieAudioEnd() {
+	std::lock_guard<std::mutex> guard(g_mister_movie_mutex);
+	if (g_mister_movie_stream) {
+		SDL_FreeAudioStream(g_mister_movie_stream);
+		g_mister_movie_stream = nullptr;
+	}
+}
+#endif
 
 extern "C" void toggle_bbking_mode() {
 	g_bb_king_mode = !g_bb_king_mode;

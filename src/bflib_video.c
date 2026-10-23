@@ -31,6 +31,9 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
 #include <math.h>
+#ifdef MISTER_HYBRID
+#include "mister_port.h"
+#endif
 #include "post_inc.h"
 
 #define SCREEN_MODES_COUNT 40
@@ -143,6 +146,17 @@ TbResult LbScreenSwap(void)
     SYNCDBG(12,"Starting");
     TbResult ret = LbMouseOnBeginSwap();
     // Put the data from Draw Surface onto Screen Surface
+#ifdef MISTER_HYBRID
+    // The window is the core's picture, 320x200 or 640x400, whatever the size of the mode
+    if (ret == Lb_SUCCESS) {
+        lbScreenSurface = SDL_GetWindowSurface(lbWindow);
+        if ((lbScreenSurface == NULL) || (lbDrawSurface == NULL)) {
+            ret = Lb_FAIL;
+        } else {
+            MiSTer_ScaleFrame(lbDrawSurface, lbScreenSurface);
+        }
+    }
+#else
     if ((ret == Lb_SUCCESS) && (lbHasSecondSurface)) {
         // Update pointer to window surface on every frame
         // to avoid problems with alt tab
@@ -153,6 +167,7 @@ TbResult LbScreenSwap(void)
             ret = Lb_FAIL;
         }
     }
+#endif
     // Flip the image displayed on Screen Surface
     if (ret == Lb_SUCCESS) {
         // calls SDL_UpdateRect for entire screen if not double buffered
@@ -349,6 +364,11 @@ static TbBool LbHwCheckIsModeAvailable(TbScreenMode mode, unsigned short display
     mdinfo->Available = false;
     mdinfo->window_pos_x = SDL_WINDOWPOS_CENTERED_DISPLAY(display);
     mdinfo->window_pos_y = SDL_WINDOWPOS_CENTERED_DISPLAY(display);
+#ifdef MISTER_HYBRID
+    // every 8-bit mode is drawn off screen and scaled to the core's picture
+    mdinfo->Available = (mdinfo->BitsPerPixel == 8) && (mdinfo->Width >= 320) && (mdinfo->Height >= 200);
+    return mdinfo->Available;
+#endif
     // if this is window mode
     if (mdinfo->VideoFlags & Lb_VF_WINDOWED)
     {
@@ -546,6 +566,28 @@ TbResult LbScreenSetup(TbScreenMode mode, TbScreenCoord width, TbScreenCoord hei
     // We set the DisplayMode for real fullscreen mode
     // We set the window size, position, and border for a window
     // The FILL ALL mode is a borderless window
+#ifdef MISTER_HYBRID
+    // The size of the window is the video mode of the core: 320x200 for a mode
+    // of that size, 640x400 for the larger ones (the menus), see LbScreenSwap()
+    {
+        const TbBool menu_size = (mdinfo->Width >= MISTER_MENU_WIDTH) && (mdinfo->Height >= MISTER_MENU_HEIGHT);
+        const int window_w = menu_size ? MISTER_MENU_WIDTH : MISTER_SCREEN_WIDTH;
+        const int window_h = menu_size ? MISTER_MENU_HEIGHT : MISTER_SCREEN_HEIGHT;
+        // A mode of the size of the core's goes there as it is, 8 bit, and the
+        // core looks up the colours; scaling mixes colours, so that is RGB565.
+        // The driver reads the hint when it makes the surface of a new size
+        SDL_SetHint("SDL_MISTER_VIDEO_FORMAT", menu_size ? "RGB565" : "INDEX8");
+        if (lbWindow == NULL) {
+            lbWindow = SDL_CreateWindow(lbDrawAreaTitle, 0, 0, window_w, window_h, 0);
+        } else {
+            int current_w, current_h;
+            SDL_GetWindowSize(lbWindow, &current_w, &current_h);
+            if ((current_w != window_w) || (current_h != window_h)) {
+                SDL_SetWindowSize(lbWindow, window_w, window_h);
+            }
+        }
+    }
+#else
     if (lbWindow != NULL)
     {
         Uint32 current_fullscreen_flags = SDL_GetWindowFlags(lbWindow) & SDL_WINDOW_FULLSCREEN_DESKTOP; // SDL_WINDOW_FULLSCREEN is already flagged in SDL_WINDOW_FULLSCREEN_DESKTOP
@@ -589,6 +631,7 @@ TbResult LbScreenSetup(TbScreenMode mode, TbScreenCoord width, TbScreenCoord hei
     if (lbWindow == NULL) {
         lbWindow = SDL_CreateWindow(lbDrawAreaTitle, mdinfo->window_pos_x, mdinfo->window_pos_y, mdinfo->Width, mdinfo->Height, mdinfo->sdlFlags);
     }
+#endif
     if (lbWindow == NULL) {
         ERRORLOG("SDL_CreateWindow failed for mode %d (%s): %s", (int)mode, mdinfo->Desc, SDL_GetError());
         return Lb_FAIL;
@@ -600,7 +643,11 @@ TbResult LbScreenSetup(TbScreenMode mode, TbScreenCoord width, TbScreenCoord hei
     }
 
     // Create secondary surface if necessary, that is if BPP != lbEngineBPP.
+#ifdef MISTER_HYBRID
+    // always: the window surface is what the core shows, see LbScreenSwap()
+#else
     if (mdinfo->BitsPerPixel != lbEngineBPP)
+#endif
     {
         lbDrawSurface = SDL_CreateRGBSurface(0, mdinfo->Width, mdinfo->Height, lbEngineBPP, 0, 0, 0, 0);
         if (lbDrawSurface == NULL) {
@@ -639,10 +686,16 @@ TbResult LbScreenSetup(TbScreenMode mode, TbScreenCoord width, TbScreenCoord hei
         {
           LbMouseChangeSpriteAndHotspot(msspr, hot_x, hot_y);
         }
+#ifdef MISTER_HYBRID
+        // There is no desktop the pointer comes from: it starts in the middle
+        // of every mode, not in a corner, where it would scroll the map
+        LbMouseSetPosition(mdinfo->Width / 2, mdinfo->Height / 2);
+#else
         if (!IsMouseInsideWindow())
         {
             SDL_WarpMouseInWindow(lbWindow, mdinfo->Width / 2, mdinfo->Height / 2);
         }
+#endif
     }
 
     reset_bflib_render();

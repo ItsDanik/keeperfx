@@ -412,6 +412,10 @@ static void load_file_configuration(const char *fname, const char *sname, const 
                    i+1,COMMAND_TEXT(cmd_num),config_textname);
                continue;
             }
+#ifdef MISTER_HYBRID
+            // the core's picture has one size: see the modes set in vidmode.c
+            continue;
+#endif
             switch (i)
             {
             case 0:
@@ -432,6 +436,9 @@ static void load_file_configuration(const char *fname, const char *sname, const 
             if (get_conf_parameter_single(buf,&pos,len,word_buf,sizeof(word_buf)) > 0)
             {
               k = LbRegisterVideoModeString(word_buf);
+#ifdef MISTER_HYBRID
+              continue;
+#endif
               if (k > 0)
                 set_game_vidmode((uint)i,(TbScreenMode)k);
               else

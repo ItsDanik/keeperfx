@@ -172,6 +172,13 @@ TbBool copy_raw8_image_buffer(unsigned char *dst_buf,const int scanline,const in
           if (dwstart > 0) {
               memset(dst, 0, dwstart);
           }
+          // Not scaled across: the row as it is. The loop below divides for
+          // every pixel, which a CPU without a divider (the MiSTer's) feels
+          if ((dst_width == src_width) && (spw >= 0) && (spw + src_width <= scanline))
+          {
+              memcpy(dst + spw, src, src_width);
+              dwstart = spw + src_width;
+          } else
           for (sw=0; sw<src_width; sw++)
           {
               int dwend = spw + (dst_width * (sw + 1) / src_width);

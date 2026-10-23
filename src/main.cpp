@@ -132,6 +132,11 @@
 #include "moonphase.h"
 #include "frontmenu_ingame_map.h"
 #include <stdint.h>
+#ifdef MISTER_HYBRID
+#include "mister_port.h"
+extern "C" float mister_turns_passed; // bflib_datetm.cpp
+#define MISTER_MAX_TURNS_BEHIND 4
+#endif
 
 #ifdef FUNCTESTING
   #include "ftests/ftest.h"
@@ -1092,6 +1097,12 @@ short setup_game(void)
           SYNCLOG("startup_fx image skipped");
   }
 
+#ifdef MISTER_HYBRID
+  // Intro Movies of the OSD
+  if (MiSTer_SkipIntro()) {
+      start_params.no_intro = true;
+  }
+#endif
   draw_clear_screen();
   // View Bullfrog company logo animation when new moon
   if ( ( is_new_moon ) || (flag_is_set(start_params.startup_flags, SFlg_Bullfrog)) )
@@ -3304,6 +3315,12 @@ TbBool keeper_wait_for_next_turn(void)
 
 TbBool keeper_wait_for_next_draw(void)
 {
+#ifdef MISTER_HYBRID
+    // One frame per field of the core at most, each from the start of a field
+    if (is_feature_on(Ft_DeltaTime) && game.frame_skip == 0 && MiSTer_WaitField()) {
+        return true;
+    }
+#endif
     // fps.draw is currently unable to work properly with frame_skip
     if (turns_per_second_draw_current > 0 && is_feature_on(Ft_DeltaTime) == true && game.frame_skip == 0)
     {
@@ -3394,6 +3411,12 @@ void gameplay_loop_logic()
 
     if (is_feature_on(Ft_DeltaTime) == true) {
         if (game.process_turn_time < 1.0) {
+#ifdef MISTER_HYBRID
+            // in time: a frame between two turns, after turns that were not drawn
+            if (game.frame_skip == 0) {
+                do_draw = true;
+            }
+#endif
             return;
         }
         game.process_turn_time -= 1.0;
@@ -3416,6 +3439,19 @@ void gameplay_loop_logic()
     }
 #endif // FUNCTESTING
     do_draw = display_should_be_updated_this_turn() || (!LbIsActive());
+#ifdef MISTER_HYBRID
+    // The MiSTer's CPU does not always manage a turn and a picture in 1/20s.
+    // With another turn already due, this one is not drawn, so that the game
+    // keeps its speed; every fourth turn is drawn whatever happens.
+    static int mister_turns_not_drawn = 0;
+    if (is_feature_on(Ft_DeltaTime) && (game.frame_skip == 0) && (game.process_turn_time >= 1.0)
+      && (mister_turns_not_drawn < MISTER_MAX_TURNS_BEHIND - 1)) {
+        do_draw = false;
+        mister_turns_not_drawn++;
+    } else {
+        mister_turns_not_drawn = 0;
+    }
+#endif
     poll_inputs();
     input_eastegg();
     input();
@@ -3475,7 +3511,19 @@ static void update_gameplay_delta_time()
             process_delta_time = (float)(process_delta_time * tick_ns_one_turn / tick_ns_adjusted_turn);
         }
     }
+#ifdef MISTER_HYBRID
+    // A frame that took longer than a turn does not slow the game down: the
+    // turns it is behind are done without drawing, see gameplay_loop_logic()
+    if (mister_turns_passed > process_delta_time) {
+        process_delta_time = mister_turns_passed;
+    }
     game.process_turn_time += process_delta_time;
+    if (game.process_turn_time > MISTER_MAX_TURNS_BEHIND) {
+        game.process_turn_time = MISTER_MAX_TURNS_BEHIND;
+    }
+#else
+    game.process_turn_time += process_delta_time;
+#endif
 }
 
 extern "C" void network_yield_draw_gameplay()
@@ -3539,7 +3587,12 @@ void gameplay_loop_timestep()
         exit_keeper = 1;
     }
 
+#ifdef MISTER_HYBRID
+    // whatever FRAMES_PER_SECOND says: the core sets the pace
+    if (is_feature_on(Ft_DeltaTime) == true) {
+#else
     if (turns_per_second_draw_current > 0 && is_feature_on(Ft_DeltaTime) == true) {
+#endif
         keeper_wait_for_next_draw();
 
         if (game.turns_packetoff == get_gameturn()) {
@@ -3851,6 +3904,10 @@ static TbBool wait_at_frontend(void)
           int32_t frame_time;
           frame_time = max(1, 1000 / turns_per_second);
           game.delta_time = 1;
+#ifdef MISTER_HYBRID
+          // the fields of the core are the clock: three of them at 20 turns per second
+          if (!MiSTer_WaitFields(max(1, MISTER_FIELDS_PER_SECOND / turns_per_second)))
+#endif
           LbSleepUntil(fe_last_loop_time + frame_time);
         }
       }
@@ -4489,6 +4546,11 @@ int LbBullfrogMain(unsigned short argc, char *argv[])
 
 int kfxmain(int argc, char *argv[])
 {
+#ifdef MISTER_HYBRID
+  if (!MiSTer_CheckData()) {
+      return 0;
+  }
+#endif
   try {
   LbBullfrogMain(argc, argv);
   } catch (...)

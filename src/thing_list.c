@@ -360,12 +360,15 @@ long near_thing_pos_thing_filter_is_enemy_object_which_can_be_attacked_by_creatu
         {
             if ((param->plyr_idx == -1) || (objtng->owner == param->plyr_idx))
             {
+                //Just dungeon hearts now. Todo: expand with other types of destructible objects
+                // (asked first: this is called for every object of the level)
+                if (!thing_is_dungeon_heart(objtng))
+                    return -1;
                 struct Thing* creatng = thing_get(param->primary_number);
                 if (players_are_enemies(creatng->owner, objtng->owner))
                 {
                     MapCoordDelta distance = get_2d_distance(&creatng->mappos, &objtng->mappos);
-                    //Just dungeon hearts now. Todo: expand with other types of destructible objects
-                    if (thing_is_dungeon_heart(objtng) && creature_can_have_combat_with_creature(creatng, (struct Thing*)objtng, distance,1,0) && !(get_creature_model_flags(creatng) & CMF_NoEnmHeartAttack))
+                    if (creature_can_have_combat_with_creature(creatng, (struct Thing*)objtng, distance,1,0) && !(get_creature_model_flags(creatng) & CMF_NoEnmHeartAttack))
                     {
                         return INT32_MAX - distance;
                     }
@@ -1845,7 +1848,14 @@ struct Thing *get_highest_score_enemy_creature_within_distance_possible_to_attac
     param.primary_number = creatng->index;
     param.secondary_number = dist;
     param.tertiary_number = move_on_ground;
+#ifdef MISTER_HYBRID
+    creature_hostility_memo_begin(creatng);
+    struct Thing *enmtng = get_nth_thing_of_class_with_filter(filter, &param, 0);
+    creature_hostility_memo_end();
+    return enmtng;
+#else
     return get_nth_thing_of_class_with_filter(filter, &param, 0);
+#endif
 }
 
 struct Thing* get_highest_score_enemy_object_within_distance_possible_to_attack_by(struct Thing* creatng, MapCoordDelta dist, long move_on_ground)

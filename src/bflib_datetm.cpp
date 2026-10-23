@@ -26,6 +26,9 @@
 #include "game_legacy.h"
 
 #include <SDL2/SDL.h>
+#ifdef MISTER_HYBRID
+#include "mister_port.h"
+#endif
 #include "post_inc.h"
 
 #ifdef __cplusplus
@@ -96,12 +99,29 @@ int get_trigger_time_measurement_fps(struct TriggerTimeMeasurement *trigger)
 }
 
 
+#ifdef MISTER_HYBRID
+/** What the last get_delta_time() would have returned without its limit of
+ *  one turn; negative without the core. See update_gameplay_delta_time(). */
+float mister_turns_passed = -1.0f;
+#endif
+
 float get_delta_time()
 {
     // Allow frame skip to work correctly when delta time is enabled
     if ( (game.frame_skip != 0) && ((get_gameturn() % game.frame_skip) != 0)) {
         return 1.0;
     }
+#ifdef MISTER_HYBRID
+    // The fields the core has shown are the game's clock, see keeper_wait_for_next_draw()
+    const unsigned fields = MiSTer_FieldsPassed();
+    if (fields > 0) {
+        delta_time_previous_timepoint = TimeNow;
+        float field_delta_time = (float)fields * turns_per_second / MISTER_FIELDS_PER_SECOND;
+        mister_turns_passed = field_delta_time;
+        return (field_delta_time > 1.0) ? 1.0 : field_delta_time;
+    }
+    mister_turns_passed = -1.0f;
+#endif
     long double frame_time_in_nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(TimeNow - delta_time_previous_timepoint).count();
     delta_time_previous_timepoint = TimeNow;
     float calculated_delta_time = (frame_time_in_nanoseconds/1000000000.0) * turns_per_second;

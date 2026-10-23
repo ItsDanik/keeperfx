@@ -6,6 +6,9 @@
 #include "bflib_vidsurface.h"
 #include "bflib_fileio.h"
 #include "kjm_input.h"
+#ifdef MISTER_HYBRID
+#include "bflib_sndlib.h"
+#endif
 
 // See: https://trac.ffmpeg.org/ticket/3626
 extern "C" {
@@ -277,6 +280,9 @@ struct movie_t {
 	time_point m_video_start;
 	AVRational m_time_base;
 	SDL_AudioDeviceID m_audio_device = 0;
+#ifdef MISTER_HYBRID
+	bool m_mister_audio = false; // the sound goes into SDL_mixer's stream, see bflib_sndlib.cpp
+#endif
 
 	int m_audio_index;
 	int m_video_index;
@@ -326,6 +332,11 @@ struct movie_t {
 			SDL_CloseAudioDevice(m_audio_device);
 			m_audio_device = 0;
 		}
+#ifdef MISTER_HYBRID
+		if (m_mister_audio) {
+			MiSTer_MovieAudioEnd();
+		}
+#endif
 	}
 
 	void open_input(const char * filename) {
@@ -361,6 +372,14 @@ struct movie_t {
 	void open_audio_device() {
         if (!flag_is_set(m_flags, SMK_NoSound))
         {
+#ifdef MISTER_HYBRID
+            if (MiSTer_MovieAudioBegin(&m_output_audio_frequency, &m_output_audio_channels)) {
+                m_mister_audio = true;
+                m_output_audio_format = AV_SAMPLE_FMT_S16;
+                m_output_audio_layout = channels_to_ffmpeg_layout(m_output_audio_channels);
+                return;
+            }
+#endif
             SDL_AudioSpec desired, obtained;
             desired.freq = 44100;
             desired.format = AUDIO_F32SYS;
@@ -512,6 +531,13 @@ struct movie_t {
 #endif
 			m_frame->nb_samples
 		);
+#ifdef MISTER_HYBRID
+		if (m_mister_audio) {
+			MiSTer_MovieAudioQueue(buffer, num_samples * sample_size);
+			av_freep(&buffer);
+			return;
+		}
+#endif
 		SDL_QueueAudio(m_audio_device, buffer, num_samples * sample_size);
 		SDL_PauseAudioDevice(m_audio_device, 0);
 		av_freep(&buffer);

@@ -375,9 +375,14 @@ int is_game_key_pressed(long key_id, TbBool clear_pressed, TbBool ignore_mods)
         return result;
     }
 
-    const TbControllerButtons ctrl_buttons_gamekey = settings.kbkeys[key_id].controller_buttons;
+    const TbControllerButtons ctrl_buttons_gamekey = get_game_key_controller_buttons(key_id);
     if (ctrl_buttons_gamekey == 0 || controller_button_state == 0)
         return 0;
+#ifdef MISTER_HYBRID
+    // the directions have the d-pad and a stick, either of which will do
+    if (((key_id >= Gkey_MoveUp) && (key_id <= Gkey_MoveRight)) || ((key_id >= Gkey_MouseUp) && (key_id <= Gkey_MouseRight)))
+        return (controller_button_state & ctrl_buttons_gamekey) != 0;
+#endif
 
         
     const TbControllerButtons mod_buttons = CBtn_A|CBtn_B|CBtn_X|CBtn_Y;
@@ -390,11 +395,59 @@ int is_game_key_pressed(long key_id, TbBool clear_pressed, TbBool ignore_mods)
   return result;
 }
 
+#ifdef MISTER_HYBRID
+/**
+ * The gamepad of the MiSTer core: a d-pad, two sticks and the eight buttons of
+ * the core's "J1" list, which the mapping of init_controller_input() names
+ * after the buttons the game gives these functions on a PC:
+ *   A       Left Click    R2           X       Modifier      A
+ *   B       Right Click   L2           Y       Map           LEFTSTICK
+ *   L       Rotate Left   LEFTSHOULDER R       Rotate Right  RIGHTSHOULDER
+ *   Select  Space         BACK         Start   Menu          START
+ *   Menu OK and Menu Back of the OSD   PADDLE1, PADDLE2 (PADDLE3, PADDLE4:
+ *   the core's own two buttons for them)
+ * The bindings are fixed (buttons are remapped in the MiSTer menu) and differ
+ * from the game's where a pad may have no sticks: the d-pad and the left
+ * stick move the hand and the right stick scrolls the map. In possession it
+ * is the other way around, the d-pad walks and the right stick looks.
+ * With the modifier held the d-pad zooms (and does not move the hand).
+ */
+static TbControllerButtons mister_controller_buttons(long key_id)
+{
+    const TbBool possession = (get_my_player()->view_type == PVT_CreatureContrl);
+    switch (key_id)
+    {
+    case Gkey_MouseUp:    return possession ? CBtn_RS_UP    : (CBtn_LS_UP|CBtn_DPAD_UP);
+    case Gkey_MouseDown:  return possession ? CBtn_RS_DOWN  : (CBtn_LS_DOWN|CBtn_DPAD_DOWN);
+    case Gkey_MouseLeft:  return possession ? CBtn_RS_LEFT  : (CBtn_LS_LEFT|CBtn_DPAD_LEFT);
+    case Gkey_MouseRight: return possession ? CBtn_RS_RIGHT : (CBtn_LS_RIGHT|CBtn_DPAD_RIGHT);
+    case Gkey_MoveUp:     return possession ? (CBtn_LS_UP|CBtn_DPAD_UP)       : CBtn_RS_UP;
+    case Gkey_MoveDown:   return possession ? (CBtn_LS_DOWN|CBtn_DPAD_DOWN)   : CBtn_RS_DOWN;
+    case Gkey_MoveLeft:   return possession ? (CBtn_LS_LEFT|CBtn_DPAD_LEFT)   : CBtn_RS_LEFT;
+    case Gkey_MoveRight:  return possession ? (CBtn_LS_RIGHT|CBtn_DPAD_RIGHT) : CBtn_RS_RIGHT;
+    case Gkey_RotateCW:   return CBtn_LEFTSHOULDER;
+    case Gkey_RotateCCW:  return CBtn_RIGHTSHOULDER;
+    case Gkey_LeftClick:  return CBtn_R2|CBtn_PADDLE1|CBtn_PADDLE3;
+    case Gkey_ButtonSnapLeft:
+    case Gkey_ButtonSnapRight:
+    case Gkey_ButtonSnapUp:
+    case Gkey_ButtonSnapDown:
+        return CBtn_NONE;
+    default:
+        return game_key_settings[key_id].default_controller_buttons;
+    }
+}
+#endif
+
 TbControllerButtons get_game_key_controller_buttons(long key_id)
 {
     if ((key_id < 0) || (key_id >= GAME_KEYS_COUNT))
         return 0;
+#ifdef MISTER_HYBRID
+    return mister_controller_buttons(key_id);
+#else
     return settings.kbkeys[key_id].controller_buttons;
+#endif
 }
 
 float get_game_key_axis_value(long key_id, TbBool ignore_mods)

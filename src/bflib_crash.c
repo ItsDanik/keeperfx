@@ -52,6 +52,9 @@
 #include <inttypes.h>
 #include "bflib_basics.h"
 #include "bflib_video.h"
+#ifdef MISTER_HYBRID
+#include "bflib_inputctrl.h"
+#endif
 #include "post_inc.h"
 
 /******************************************************************************/
@@ -559,16 +562,31 @@ static void install_posix_handler(int sig_id)
 }
 #endif
 
+#ifdef MISTER_HYBRID
+/** The launcher ends the game with SIGTERM when another core is loaded: that
+ *  is the player quitting, not a crash. */
+static void mister_quit_handler(int sig_id)
+{
+    lbUserQuit = 1;
+}
+#endif
+
 void LbErrorParachuteInstall(void)
 {
 #if defined(BF_POSIX_CRASH)
+#ifdef MISTER_HYBRID
+    signal(SIGINT, mister_quit_handler);
+    signal(SIGTERM, mister_quit_handler);
+    signal(SIGHUP, mister_quit_handler);
+#else
     install_posix_handler(SIGINT);
+    install_posix_handler(SIGTERM);
+    install_posix_handler(SIGHUP);
+#endif
     install_posix_handler(SIGILL);
     install_posix_handler(SIGABRT);
     install_posix_handler(SIGFPE);
     install_posix_handler(SIGSEGV);
-    install_posix_handler(SIGTERM);
-    install_posix_handler(SIGHUP);
     install_posix_handler(SIGQUIT);
 #ifdef SIGSYS
     install_posix_handler(SIGSYS);

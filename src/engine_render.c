@@ -398,6 +398,18 @@ struct MinMax minmaxs[MINMAX_LENGTH];
 unsigned char *getpoly;
 unsigned char poly_pool[POLY_POOL_SIZE];
 unsigned char *poly_pool_end;
+#ifdef MISTER_HYBRID
+// How far the pool was written since it was last cleared: the rest of it is still
+// zero. Clearing all 16MB takes 27ms on the MiSTer, a frame uses some tens of kB.
+static unsigned char *poly_pool_dirty = poly_pool;
+
+// Before getpoly goes back to the start of the pool
+static void poly_pool_note_dirty(void)
+{
+    if (getpoly > poly_pool_dirty)
+        poly_pool_dirty = getpoly;
+}
+#endif
 struct BasicQ *buckets[BUCKETS_COUNT];
 long cells_away;
 long max_i_can_see;
@@ -6867,9 +6879,17 @@ void draw_view(struct Camera *cam, unsigned char a2)
     long y = cam->mappos.y.val;
     long z = cam->mappos.z.val;
 
+#ifdef MISTER_HYBRID
+    poly_pool_note_dirty();
+    getpoly = poly_pool;
+    memset(buckets, 0, sizeof(buckets));
+    memset(poly_pool, 0, poly_pool_dirty - poly_pool);
+    poly_pool_dirty = poly_pool;
+#else
     getpoly = poly_pool;
     memset(buckets, 0, sizeof(buckets));
     memset(poly_pool, 0, sizeof(poly_pool));
+#endif
     if (map_volume_box.visible)
     {
         poly_pool_end_reserve(14);
@@ -6935,6 +6955,9 @@ void draw_view(struct Camera *cam, unsigned char a2)
 
 static void clear_fast_bucket_list(void)
 {
+#ifdef MISTER_HYBRID
+    poly_pool_note_dirty();
+#endif
     getpoly = poly_pool;
     memset(buckets, 0, sizeof(buckets));
 }

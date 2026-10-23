@@ -40,6 +40,10 @@
 #include "front_input.h"
 #include "frontmenu_ingame_map.h"
 #include "game_legacy.h"
+#ifdef MISTER_HYBRID
+#include "mister_port.h"
+#include "bflib_sndlib.h"
+#endif
 #include "post_inc.h"
 
 #ifdef __cplusplus
@@ -218,7 +222,12 @@ static float get_input_delta_time()
     TbClockMSec elapsed_msec = current_msec - delta_time_previous_msec;
     delta_time_previous_msec = current_msec;
     float calculated_delta_time = ((float)elapsed_msec / 1000.0f) * turns_per_second;
+#ifdef MISTER_HYBRID
+    // the hand keeps its speed when the frames take longer than a turn
+    return min(calculated_delta_time, 5.0f);
+#else
     return min(calculated_delta_time, 1.0f);
+#endif
 }
 
 void poll_controller_mouse_clicks()
@@ -265,6 +274,18 @@ static void poll_controller_mouse_movement(float nx, float ny)
     float curved = norm_mag * norm_mag;
     float pixels_per_second = lbDisplay.GraphicsWindowWidth / SECONDS_TO_CROSS;
     float pixels_this_frame = pixels_per_second * input_delta_time;
+#ifdef MISTER_HYBRID
+    // A d-pad is all or nothing: the hand starts slowly, for the small steps,
+    // and is at full speed after half a second. Mouse Speed of the OSD applies.
+    static TbClockMSec moving_since = 0;
+    static TbClockMSec moved_last = 0;
+    const TbClockMSec now = LbTimerClock();
+    if (now - moved_last > 100)
+        moving_since = now;
+    moved_last = now;
+    float ramp = 0.2f + 0.8f * (float)(now - moving_since) / 500.0f;
+    pixels_this_frame *= 0.75f * min(ramp, 1.0f) * (float)MiSTer_MouseSpeed() / 256.0f;
+#endif
 
     mouse_accum_x += nx * curved * pixels_this_frame;
     mouse_accum_y += ny * curved * pixels_this_frame;
@@ -291,6 +312,22 @@ void update_controller_inputs()
     poll_controller_mouse_clicks();
     float mouse_x = get_game_key_axis_value(Gkey_MouseRight, false) - get_game_key_axis_value(Gkey_MouseLeft, false);
     float mouse_y = get_game_key_axis_value(Gkey_MouseDown, false) - get_game_key_axis_value(Gkey_MouseUp, false);
+#ifdef MISTER_HYBRID
+    // with the modifier held the d-pad zooms
+    if ((controller_button_state & CBtn_A) != 0) {
+        mouse_x = 0.0f;
+        mouse_y = 0.0f;
+    }
+    // Menu Back of the OSD leaves a menu, as Esc does. Not in the dungeon,
+    // where that button may well be the one for the right click.
+    static TbBool last_menu_back_state = false;
+    const TbBool menu_back_pressed = ((controller_button_state & (CBtn_PADDLE2|CBtn_PADDLE4)) != 0);
+    if (menu_back_pressed && !last_menu_back_state && (game.game_kind == GKind_Unset)) {
+        lbKeyOn[KC_ESCAPE] = 1;
+        lbInkey = KC_ESCAPE;
+    }
+    last_menu_back_state = menu_back_pressed;
+#endif
     poll_controller_mouse_movement(mouse_x, mouse_y);
     get_button_snapping_inputs();
 
@@ -308,6 +345,9 @@ TbBool poll_inputs(void)
 {
     TbBool user_not_quit = LbPollInputs();
     update_controller_inputs();
+#ifdef MISTER_HYBRID
+    MiSTer_UpdateVolume();
+#endif
 
     return user_not_quit;
 }

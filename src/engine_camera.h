@@ -38,7 +38,14 @@ struct Thing;
 
 // Camera constants; zoom max is zoomed in (everything large), zoom min is zoomed out (everything small)
 #define CAMERA_ZOOM_MAX 12000
+#ifdef MISTER_HYBRID
+// As far out as Dungeon Keeper went. Further out the dungeon is thousands of
+// polygons of a pixel or two, which a 320x200 screen does not show and the
+// MiSTer's CPU does not draw in time (54ms a frame at 2295, 37ms at 4100).
+#define CAMERA_ZOOM_MIN 4100
+#else
 #define CAMERA_ZOOM_MIN 520 // Originally 4100, adjusted for view distance
+#endif
 #define FRONTVIEW_CAMERA_ZOOM_MAX 65536
 #define FRONTVIEW_CAMERA_ZOOM_MIN 3000 // Originally 16384, adjusted for view distance
 #define MINMAX_LENGTH 512 // Originally 64, adjusted for view distance
